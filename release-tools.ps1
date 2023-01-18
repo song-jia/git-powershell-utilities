@@ -80,6 +80,27 @@ COMMANDS
     }
 }
 
+filter ColorTable {
+    param(
+        [string] $word,
+        [string] $color
+    )
+    $lines = ($_ -split '\n')
+    # $index = $line.IndexOf($word, [System.StringComparison]::InvariantCultureIgnoreCase)
+    # while($index -ge 0){
+    #     Write-Host $line.Substring(0,$index) -NoNewline
+    #     Write-Host $line.Substring($index, $word.Length) -NoNewline -ForegroundColor $color
+    #     $used = $word.Length + $index
+    #     $remain = $line.Length - $used
+    #     $line = $line.Substring($used, $remain)
+    #     $index = $line.IndexOf($word, [System.StringComparison]::InvariantCultureIgnoreCase)
+    # }
+
+    foreach ($line in $lines) {
+        Write-Host $line
+    }
+}
+
 function RevList() {
 <#
 .SYNOPSIS
@@ -106,15 +127,17 @@ COMMANDS
     }
 
     $gitFolders = getGitFolders $dir
-    $result = [System.Collections.ArrayList]::new()
+    $totalItems = $gitFolders.Count
+    $CurrentItem = 0
+    $PercentComplete = 0
+    $result = New-Object System.Collections.Generic.List[PSCustomObject]
 
     # Pulls the latest code from git
     foreach ($folder in $gitFolders) {
-        Write-Host $folder
-        Set-Location -LiteralPath $folder
-        #git fetch -ap
+        Write-Progress -Activity "Checking $folder" -Status "$CurrentItem of $totalItems complete" -PercentComplete $PercentComplete
 
-        $Branches = git branch -a
+        # get all branches
+        $Branches = Invoke-Expression "git -C $folder branch -a"
 
         foreach($Branch in $Branches) {
             if ($Branch -match "^.*\/(.*)$branchSuffix$") { 
@@ -125,20 +148,10 @@ COMMANDS
 
         $OriginalBranch = $ReleaseBranch.Replace($branchSuffix, '');
 
-        Write-Information -MessageData ('Comparing ' + $OriginalBranch + ' and ' + $ReleaseBranch) -InformationAction Continue
-
         $compareRes = Invoke-Expression "git -C $folder rev-list --left-right --count $OriginalBranch...$ReleaseBranch"
 
         if ($compareRes -match '^(\d+)\s*(\d+)')
         {
-            if ($Matches[1] -gt 0) {
-                $warningMessage = $Matches[1] + ' new commits found on '+$OriginalBranch
-                Write-Warning $warningMessage
-            }
-            else {
-                Write-Information 'No new commit' -InformationAction Continue
-            }
-
             $result.Add([PSCustomObject]@{
                 Name = $folder
                 Behind = $Matches[1]
@@ -146,13 +159,17 @@ COMMANDS
             })
         }
         else {
-            $errorMessage = 'Failed to compare ' + $OriginalBranch + $ReleaseBranch
-        Write-Error $errorMessage
+            $result.Add([PSCustomObject]@{
+                Name = $folder
+                Error = "Error"
+            })
         }
+
+        $CurrentItem = $CurrentItem + 1
+        $PercentComplete = [int](($CurrentItem / $TotalItems) * 100)
     }
 
-
-    $result | Format-Table
+    $result | Format-Table | Out-String | ColorTable
 }
 
 switch($command) {
